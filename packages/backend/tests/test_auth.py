@@ -72,14 +72,16 @@ def test_login_brute_force_prevention(client):
     email = "brute@test.com"
     password = "secret123"
     client.post("/auth/register", json={"email": email, "password": password})
-    
+
     # 5 Failed attempts
     for _ in range(5):
-        r = client.post("/auth/login", json={"email": email, "password": "wrongpassword"})
+        r = client.post(
+            "/auth/login", json={"email": email, "password": "wrongpassword"}
+        )
         if r.status_code == 429:
             break
         assert r.status_code == 401
-        
+
     # the 6th attempt should definitely be 429
     r = client.post("/auth/login", json={"email": email, "password": "wrongpassword"})
     assert r.status_code == 429
@@ -105,13 +107,13 @@ def test_login_security_alerts_new_device(client):
     assert r.status_code == 200
     alerts = r.get_json()["alerts"]
     assert len(alerts) >= 1
-    
+
     new_device_alert_id = None
     for a in alerts:
         if a["alert_type"] == "NEW_DEVICE_LOGIN":
             new_device_alert_id = a["id"]
             break
-            
+
     assert new_device_alert_id is not None
 
     # Mark read

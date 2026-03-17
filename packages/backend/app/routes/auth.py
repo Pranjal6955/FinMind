@@ -56,51 +56,60 @@ def login():
     data = request.get_json() or {}
     email = data.get("email")
     password = data.get("password")
-    
+
     if not email or not password:
         return jsonify(error="email and password required"), 400
 
-    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr) or "127.0.0.1"
-    ip_address = ip_address.split(',')[0].strip()[:45]
+    ip_address = (
+        request.headers.get("X-Forwarded-For", request.remote_addr) or "127.0.0.1"
+    )
+    ip_address = ip_address.split(",")[0].strip()[:45]
     user_agent = request.user_agent.string if request.user_agent else "Unknown"
     user_agent = user_agent[:500]
 
     rate_limit_key = f"auth:failed_login:{email}"
     failed_attempts = redis_client.get(rate_limit_key)
-    
+
     if failed_attempts and int(failed_attempts) >= 5:
         user = db.session.query(User).filter_by(email=email).first()
         if user:
             logger.warning("Brute force attempt blocked for user_id=%s", user.id)
-            recent_alert = db.session.query(SecurityAlert).filter(
-                SecurityAlert.user_id == user.id,
-                SecurityAlert.alert_type == "BRUTE_FORCE",
-                SecurityAlert.created_at >= datetime.utcnow() - timedelta(hours=1)
-            ).first()
+            recent_alert = (
+                db.session.query(SecurityAlert)
+                .filter(
+                    SecurityAlert.user_id == user.id,
+                    SecurityAlert.alert_type == "BRUTE_FORCE",
+                    SecurityAlert.created_at >= datetime.utcnow() - timedelta(hours=1),
+                )
+                .first()
+            )
             if not recent_alert:
                 alert = SecurityAlert(
                     user_id=user.id,
                     alert_type="BRUTE_FORCE",
-                    description="Multiple failed login attempts detected in a short time."
+                    description="Multiple failed login attempts detected in a short time.",
                 )
                 db.session.add(alert)
                 db.session.commit()
-        return jsonify(error="Too many failed login attempts. Please try again later."), 429
-    
+        return (
+            jsonify(error="Too many failed login attempts. Please try again later."),
+            429,
+        )
+
     user = db.session.query(User).filter_by(email=email).first()
-    
+
     if not user or not check_password_hash(user.password_hash, password):
         redis_client.incr(rate_limit_key)
         ttl = redis_client.ttl(rate_limit_key)
         if ttl == -1 or ttl == -2:
             redis_client.expire(rate_limit_key, 900)
-            
+
         logger.warning("Login failed for email=%s", email)
         history = LoginHistory(
             user_id=user.id if user else None,
             ip_address=ip_address,
             user_agent=user_agent,
-            status="FAILED"
+            status="FAILED",
         )
         db.session.add(history)
         db.session.commit()
@@ -108,21 +117,27 @@ def login():
 
     redis_client.delete(rate_limit_key)
 
-    past_success = db.session.query(LoginHistory).filter(
-        LoginHistory.user_id == user.id,
-        LoginHistory.status == "SUCCESS",
-        LoginHistory.ip_address == ip_address
-    ).first()
+    past_success = (
+        db.session.query(LoginHistory)
+        .filter(
+            LoginHistory.user_id == user.id,
+            LoginHistory.status == "SUCCESS",
+            LoginHistory.ip_address == ip_address,
+        )
+        .first()
+    )
 
     if not past_success:
         alert = SecurityAlert(
             user_id=user.id,
             alert_type="NEW_DEVICE_LOGIN",
-            description=f"Login detected from a new IP address: {ip_address}"
+            description=f"Login detected from a new IP address: {ip_address}",
         )
         db.session.add(alert)
 
-    history = LoginHistory(user_id=user.id, ip_address=ip_address, user_agent=user_agent, status="SUCCESS")
+    history = LoginHistory(
+        user_id=user.id, ip_address=ip_address, user_agent=user_agent, status="SUCCESS"
+    )
     db.session.add(history)
     db.session.commit()
 
@@ -210,18 +225,27 @@ def _store_refresh_session(refresh_token: str, uid: str):
 @jwt_required()
 def get_alerts():
     uid = int(get_jwt_identity())
-    alerts = db.session.query(SecurityAlert).filter_by(user_id=uid).order_by(SecurityAlert.created_at.desc()).limit(10).all()
-    return jsonify({
-        "alerts": [
-            {
-                "id": a.id,
-                "alert_type": a.alert_type,
-                "description": a.description,
-                "is_read": a.is_read,
-                "created_at": a.created_at.isoformat()
-            } for a in alerts
-        ]
-    })
+    alerts = (
+        db.session.query(SecurityAlert)
+        .filter_by(user_id=uid)
+        .order_by(SecurityAlert.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    return jsonify(
+        {
+            "alerts": [
+                {
+                    "id": a.id,
+                    "alert_type": a.alert_type,
+                    "description": a.description,
+                    "is_read": a.is_read,
+                    "created_at": a.created_at.isoformat(),
+                }
+                for a in alerts
+            ]
+        }
+    )
 
 
 @bp.patch("/alerts/<int:alert_id>/read")
