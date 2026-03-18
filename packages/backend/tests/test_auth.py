@@ -110,9 +110,13 @@ def test_login_security_alerts_new_device(client):
     assert r.status_code in (201, 409)
 
     headers_ip1 = {"X-Forwarded-For": "192.168.1.100"}
-    
+
     # First successful login from IP1
-    r = client.post("/auth/login", json={"email": email, "password": password}, headers=headers_ip1)
+    r = client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+        headers=headers_ip1,
+    )
     assert r.status_code == 200
     access = r.get_json()["access_token"]
     auth = {"Authorization": f"Bearer {access}"}
@@ -138,7 +142,11 @@ def test_login_security_alerts_new_device(client):
             assert a["is_read"] is True
 
     # Login again from same IP1 - should not generate a new alert
-    r = client.post("/auth/login", json={"email": email, "password": password}, headers=headers_ip1)
+    r = client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+        headers=headers_ip1,
+    )
     assert r.status_code == 200
 
     r = client.get("/auth/alerts", headers=auth)
@@ -148,7 +156,11 @@ def test_login_security_alerts_new_device(client):
 
     # Login from new IP2 - should trigger new device alert
     headers_ip2 = {"X-Forwarded-For": "10.0.0.5"}
-    r = client.post("/auth/login", json={"email": email, "password": password}, headers=headers_ip2)
+    r = client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+        headers=headers_ip2,
+    )
     assert r.status_code == 200
 
     r = client.get("/auth/alerts", headers=auth)
