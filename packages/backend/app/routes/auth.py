@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import (
     create_access_token,
@@ -13,6 +13,28 @@ from ..models import User, LoginHistory, SecurityAlert
 import logging
 import time
 from datetime import datetime, timedelta
+import resend
+
+def _send_admin_alert(alert_type: str, description: str, user_email: str):
+    api_key = current_app.config.get("RESEND_API_KEY")
+    admin_email = current_app.config.get("ADMIN_EMAIL")
+    email_from = current_app.config.get("EMAIL_FROM") or "security@finmind.com"
+
+    if not api_key or not admin_email:
+        logger.warning("Admin alert not sent for %s: RESEND_API_KEY or ADMIN_EMAIL missing.", alert_type)
+        return
+
+    resend.api_key = api_key
+    try:
+        resend.Emails.send({
+            "from": email_from,
+            "to": admin_email,
+            "subject": f"Security Alert: {alert_type} Detected",
+            "html": f"<p><strong>Alert Type:</strong> {alert_type}</p><p><strong>User:</strong> {user_email}</p><p><strong>Description:</strong> {description}</p>"
+        })
+        logger.info("Admin email alert sent for %s", alert_type)
+    except Exception as e:
+        logger.error("Failed to send admin alert email: %s", e)
 
 bp = Blueprint("auth", __name__)
 logger = logging.getLogger("finmind.auth")
@@ -91,6 +113,7 @@ def login():
                 )
                 db.session.add(alert)
                 db.session.commit()
+                _send_admin_alert("BRUTE_FORCE", alert.description, email)
         return (
             jsonify(error="Too many failed login attempts. Please try again later."),
             429,
@@ -134,6 +157,7 @@ def login():
             description=f"Login detected from a new IP address: {ip_address}",
         )
         db.session.add(alert)
+        _send_admin_alert("NEW_DEVICE_LOGIN", alert.description, email)
 
     history = LoginHistory(
         user_id=user.id, ip_address=ip_address, user_agent=user_agent, status="SUCCESS"
